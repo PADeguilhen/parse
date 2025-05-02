@@ -5,22 +5,12 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github PADeguilhen/parse))
 
-(authors "Author Name <author@example.com>")
-
-(maintainers "Maintainer Name <maintainer@example.com>")
-
-(license LICENSE)
-
-(documentation https://url/to/documentation)
+(authors "Paul-Alexandre DEGUILHEN <padeguilhen@live.fr>")
 
 (package
  (name parse)
- (synopsis "A short synopsis")
- (description "A longer description")
- (depends ocaml)
- (tags
-  ("add topics" "to describe" your project)))
-
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
+ (synopsis "parse is a monadic parser combinator library with an extensive example for arithmetic expressions")
+ (description "parse is a monadic parser combinator library with an extensive example for arithmetic expressions based on the Angstrom parser library: https://github.com/inhabitedtype/angstrom.")
+ (depends ocaml))

@@ -1,4 +1,4 @@
-open Parse
+open Parse 
 
 let is_digit = function 
   | '0'..'9' -> true 
@@ -114,6 +114,12 @@ and sign =
 let rec show_error msgs = 
   match msgs with | x :: xs -> print_string x; print_newline (); show_error xs | [] -> ()
 
+let parse_expr str =
+  match (parse (expr <?> "expected expression") str) with
+  | Done (_pos, e) -> eval e
+  | Fail (pos, str) -> Printf.printf "Failure on caracter %d\n" pos; show_error str; 0.
+  | _ -> print_string "something went wrong :s\n"; 0.
+    
 let expression str = 
   match (parse (expr <?> "expected expression") str) with
   | Done (_pos, e) -> Printf.printf "Success: %f\n" (eval e)
