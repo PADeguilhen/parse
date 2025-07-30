@@ -9,8 +9,12 @@
 
 (authors "Paul-Alexandre DEGUILHEN <padeguilhen@live.fr>")
 
+(maintainers "Paul-Alexandre DEGUILHEN <padeguilhen@live.fr>")
+
+(license "MIT")
+
 (package
  (name parse)
- (synopsis "parse is a monadic parser combinator library with an extensive example for arithmetic expressions")
- (description "parse is a monadic parser combinator library with an extensive example for arithmetic expressions based on the Angstrom parser library: https://github.com/inhabitedtype/angstrom.")
- (depends ocaml))
+ (synopsis "Parse is a monadic parser combinator library with an extensive example for arithmetic expressions")
+ (description "Parse is a monadic parser combinator library with an extensive example for arithmetic expressions based on the Angstrom parser library: https://github.com/inhabitedtype/angstrom.")
+ (depends ocaml alcotest))

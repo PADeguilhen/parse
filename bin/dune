@@ -1,4 +1,4 @@
 (executable
- (public_name parse)
+ (public_name app)
  (name main)
- (libraries expressions))
+ (libraries parse.expressions))

@@ -1,5 +1,5 @@
-open Expressions
+open Expressions_lib.Expressions
 
 let () =
-  let e = "6/3" in
-  expression e 
+  let e = "10" in
+  expression e

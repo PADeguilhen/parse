@@ -1,3 +1,31 @@
+; (test
+;  (name test_parse_expr)
+;  (libraries parse.expressions alcotest))
+
 (test
- (name test_parse)
- (libraries expressions))
+ (name test_parser_basic)
+ (libraries parse.parse alcotest))
+
+(test
+ (name test_parser_monadic)
+ (libraries parse.parse alcotest))
+
+(test
+ (name test_parser_lifting)
+ (libraries parse.parse alcotest))
+
+(test
+ (name test_parser_sequencing)
+ (libraries parse.parse alcotest))
+
+(test
+ (name test_parser_control)
+ (libraries parse.parse alcotest))
+
+; (test
+;  (name test_parser_parsing)
+;  (libraries parse.parse alcotest))
+
+; (test
+;  (name test_parser_combinators)
+;  (libraries parse.parse alcotest))

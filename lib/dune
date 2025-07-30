@@ -1,2 +1,10 @@
 (library
- (name expressions))
+ (public_name parse.parse)
+ (name parse_lib)
+ (modules parse))
+
+(library
+ (public_name parse.expressions)
+ (name expressions_lib)
+ (libraries parse_lib)
+ (modules expressions))

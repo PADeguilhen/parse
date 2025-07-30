@@ -1,203 +1,257 @@
 module State = struct
-  type 'a t = 
+  type 'a t =
     | Done of int * 'a
     | Fail of int * string list
     | Lazy of 'a t Lazy.t
 end
 
-type 'a with_input = string -> int -> 'a
+module Input = struct
+  (* (input, pos, is_increasing, length) *)
+  type t = {
+    input : string;
+    mutable pos : int;
+    mutable is_increasing : bool;
+    length : int;
+  }
+
+  let input_of_string ?(is_increasing = true) str =
+    let len = String.length str in
+    {
+      input = str;
+      pos = (if is_increasing then 0 else len - 1);
+      is_increasing;
+      length = len;
+    }
+
+  let pos v = v.pos
+  let len (v : t) = v.length
+
+  (* Can you go to the dist next element in the input (exclusive) *)
+  let can_get ~dist (v : t) =
+    if v.is_increasing then v.pos + dist < v.length else v.pos - dist >= 0
+
+  let collect (v : t) len =
+    let res = String.sub v.input v.pos len in
+    Printf.printf "now:%d + len:%d\n" v.pos len;
+    v.pos <- v.pos + len;
+    res
+
+  let get ~dist (v : t) =
+    if can_get ~dist v then begin Printf.printf "get called on %c\n" v.input.[v.pos + dist]; v.input.[v.pos + dist] end
+    else
+      failwith
+        (Printf.sprintf "Input backend error: out of bounds in get: %d" v.pos)
+
+  let next ~dist v =
+    if v.is_increasing then v.pos <- v.pos + dist else v.pos <- v.pos - dist;
+    v
+
+  let get_next v =
+    if can_get ~dist:0 v then (
+      let res = get ~dist:0 v in
+      if v.is_increasing then v.pos <- v.pos else v.pos <- v.pos;
+      res)
+    else
+      failwith
+        (Printf.sprintf "Input backend error: cannot get to next: %d" v.pos)
+end
+
+type 'a with_input = Input.t -> 'a
+
 (*
 success takes an input string, input position, returns an ast
 failure takes the same but returns an error message
 *)
 type ('a, 'r) success = ('a -> 'r State.t) with_input
-
 type 'r failure = (string list -> 'r State.t) with_input
 
-type 'a t = 
-{
-  run: 'r. (('a, 'r) success -> 'r failure -> 'r State.t) with_input
-}
-  
-let fail_k _inp pos msg =
-  State.Fail(pos, msg)
-
-let succ_k _inp pos a = 
-  State.Done(pos, a)
-
-let rec from_state s = match s with 
-  | State.Done(pos, ast) -> State.Done(pos, ast)
-  | State.Fail(pos, msg) -> State.Fail(pos, msg)
-  | State.Lazy(x) -> from_state (Lazy.force x)
-
-let parse p input = from_state (p.run input 0 succ_k fail_k)
-
-let return v = 
-{
-  run = fun input pos succ _fail -> succ input pos v
+type 'a t = {
+  run : 'r. (('a, 'r) success -> 'r failure -> 'r State.t) with_input;
 }
 
-let fail msg = 
-{
-  run = fun input pos _succ fail -> fail input pos msg
-}
+let fail_k (inp : Input.t) msg = State.Fail (inp.pos, msg)
+let succ_k (inp : Input.t) a = State.Done (inp.pos, a)
 
-let ( >>= ) p f  = 
-{
-  run = fun inp pos succ fail -> 
-    let succ' inp' pos' v = (f v).run inp' pos' succ fail in
-    p.run inp pos succ' fail
-}
+let rec from_state s =
+  match s with
+  | State.Done (pos, ast) -> State.Done (pos, ast)
+  | State.Fail (pos, msg) -> State.Fail (pos, msg)
+  | State.Lazy x -> from_state (Lazy.force x)
 
-let (>>|) m f =
-{
-  run = fun inp pos succ fail ->
-    let succ' inp' pos' v  = succ inp' pos' (f v) in
-    m.run inp pos succ' fail
-}
+let parse ?(incr = true) p input =
+  from_state
+    (p.run (Input.input_of_string ~is_increasing:incr input) succ_k fail_k)
 
-let (<$>) f m = m >>| f
+let string_of_err err = List.fold_left (fun acc n -> acc ^ n) "" err
 
-let (<*>) f m = f >>= fun f -> m >>| f
+let parser ?(incr = true) p str =
+  match parse ~incr p str with
+  | Done (_pos, e) -> Ok e
+  | Fail (pos, err) ->
+      Error (Printf.sprintf "Error: %s at position: %d" (string_of_err err) pos)
+  | _ -> Error "wtf ??"
 
-let lift  = (>>|)
-let lift2 f m1 m2       = f <$> m1 <*> m2
-let lift3 f m1 m2 m3    = f <$> m1 <*> m2 <*> m3
+let return v = { run = (fun input succ _fail -> succ input v) }
+let fail msg = { run = (fun input _succ fail -> fail input msg) }
+
+let ( >>= ) p f =
+  {
+    run =
+      (fun inp succ fail ->
+        let succ' inp' v = (f v).run inp' succ fail in
+        p.run inp succ' fail);
+  }
+
+let ( >>| ) m f =
+  {
+    run =
+      (fun inp succ fail ->
+        let succ' inp' v = succ inp' (f v) in
+        m.run inp succ' fail);
+  }
+
+let ( <$> ) f m = m >>| f
+let ( <*> ) f m = f >>= fun f -> m >>| f
+let lift = ( >>| )
+let lift2 f m1 m2 = f <$> m1 <*> m2
+let lift3 f m1 m2 m3 = f <$> m1 <*> m2 <*> m3
 let lift4 f m1 m2 m3 m4 = f <$> m1 <*> m2 <*> m3 <*> m4
 
-let ( *>) a b =
-{
-  run = fun inp pos succ fail ->
-    let succ' inp' pos' _v = b.run inp' pos' succ fail in
-    a.run inp pos succ' fail
-}
+let ( *> ) a b =
+  {
+    run =
+      (fun inp succ fail ->
+        let succ' inp' _v = b.run inp' succ fail in
+        a.run inp succ' fail);
+  }
 
-let (<* ) a b =
-{
-  run = fun inp pos succ fail ->
-    let succ0 inp0 pos0 v =
-      let succ1 inp1 pos1 _ = succ inp1 pos1 v in 
-      b.run inp0 pos0 succ1 fail
-    in
-    a.run inp pos succ0 fail
-}
+let ( <* ) a b =
+  {
+    run =
+      (fun inp succ fail ->
+        let succ0 inp0 v =
+          let succ1 inp1 _ = succ inp1 v in
+          b.run inp0 succ1 fail
+        in
+        a.run inp succ0 fail);
+  }
 
-let (<?>) p msg = 
-{
-  run = fun input pos success failure -> 
-    let failure' inp' pos' msg' = failure inp' pos' (msg :: msg')
-  in p.run input pos success failure'
-}
+let ( <?> ) p msg =
+  {
+    run =
+      (fun input success failure ->
+        let failure' inp' msg' = failure inp' (msg :: msg') in
+        p.run input success failure');
+  }
 
-let (<|>) p q = 
-{
-  run = fun input pos success failure ->
-    let failure' inp' pos' _msg = q.run inp' pos' success failure
-  in 
-  p.run input pos success failure'
-}
+let ( <|> ) p q =
+  {
+    run =
+      (fun input success failure ->
+        let failure' inp' _msg = q.run inp' success failure in
+        p.run input success failure');
+  }
 
-let advance n = 
-{
-  run = fun input pos success failure ->
-    if pos + n > String.length input then failure input pos []
-    else success input (pos + 1) ()
-}
+let advance n =
+  {
+    run =
+      (fun input success failure ->
+        if Input.can_get ~dist:n input then failure input []
+        else success (Input.next ~dist:n input) ());
+  }
 
-let take_while f = 
-{
-  run = fun input pos success _fail ->
-    let rec collect acc pos = 
-      if pos < String.length input && f (input.[pos]) then
-        collect (acc ^ String.make 1 (input.[pos])) (pos + 1)
-      else (acc, pos)
-    in
-    let (result, npos) = collect "" pos in
-    success input npos result
-}
+let take_while f =
+  {
+    run =
+      (fun input success _fail ->
+        let rec range l =
+          if Input.can_get ~dist:l input && f (Input.get ~dist:l input) then
+            begin Printf.printf "taking %c" (Input.get ~dist:l input);
+            range (l + 1) end
+          else l
+        in
+        let result = Input.collect input (range 0) in
+        success input result);
+  }
 
-let take_while1 f = 
-{
-  run = fun input pos success failure ->
-    let rec collect acc pos = 
-      if pos < String.length input && f (input.[pos]) then
-        collect (acc ^ String.make 1 (input.[pos])) (pos + 1)
-      else (acc, pos)
-    in
-    let (result, npos) = collect "" pos in
-    if npos = pos then failure input pos []
-    else success input npos result
-}
+let take_while1 f =
+  {
+    run =
+      (fun input success failure ->
+        let rec range l =
+          if Input.can_get ~dist:l input && f (Input.get ~dist:l input) then
+            range (l + 1)
+          else l
+        in
+        let len = range 0 in
+        if len = 0 then failure input []
+        else
+          let result = Input.collect input len in
+          success input result);
+  }
 
 let peek_char =
-{
-  run = fun input pos success _fail ->
-    if String.length input <= pos then 
-      success input pos None
-    else
-      success input pos (Some input.[pos])
-}
+  {
+    run =
+      (fun input success _fail ->
+        if Input.can_get ~dist:0 input then success input None
+        else success input (Some (Input.get input)));
+  }
 
 let peek_string n =
-{
-  run = fun input pos success failure ->
-    let rec collect i acc = 
-      if i = n then success input pos acc
-      else
-        if pos + i >= String.length input then failure input pos []
-        else collect (i + 1) (acc ^ (String.make 1 input.[pos+i] ))
-    in collect 0 ""
-}
+  {
+    run =
+      (fun input success failure ->
+        let rec collect i acc =
+          if i = n then success input acc
+          else if Input.can_get ~dist:i input then failure input []
+          else collect (i + 1) (acc ^ String.make 1 (Input.get_next input))
+        in
+        collect 0 "");
+  }
 
-let char c = 
-{
-  run = fun input pos success failure ->
-    if pos > String.length input then failure input pos []
-    else
-      if pos >= String.length input then failure input pos []
-      else
-        if input.[pos] = c then success input (pos+1) c
-        else failure input pos []
-}
+let char c =
+  {
+    run =
+      (fun input success failure ->
+        if not (Input.can_get ~dist:0 input) then failure input []
+        else if Input.get_next input = c then success input c
+        else failure input []);
+  }
 
 let string str =
-{
-  run = fun input pos success failure ->
-    let n = String.length str in
-    let rec collect i acc = 
-      if i = n then success input pos acc
-      else
-        if pos + i >= String.length input then failure input pos []
-        else 
-          if str.[i] = input.[pos + i] then collect (i + 1) (acc ^ (String.make 1 input.[pos+i]))
-          else failure input pos []
-    in collect 0 ""
-}
+  {
+    run =
+      (fun input success failure ->
+        let len = String.length str in
+        let res = Input.collect input len in
+        if res = str then success (Input.next ~dist:len input) res
+        else failure input []);
+  }
 
 let cons x xs = x :: xs
 
 let fix_lazy ~max_steps f =
   let steps = ref max_steps in
   let rec p = lazy (f r)
-  and r = { run = fun inp pos fail succ ->
-    decr steps;
-    if !steps < 0
-    then (
-      steps := max_steps;
-      State.Lazy (lazy ((Lazy.force p).run inp pos fail succ)))
-    else
-      (Lazy.force p).run inp pos fail succ
-          }
+  and r =
+    {
+      run =
+        (fun inp succ fail ->
+          decr steps;
+          if !steps < 0 then (
+            steps := max_steps;
+            State.Lazy (lazy ((Lazy.force p).run inp succ fail)))
+          else (Lazy.force p).run inp succ fail);
+    }
   in
   r
 
-let notset = { run = fun _buf _pos _fail _succ -> failwith "oopsy :/" }
+let notset = { run = (fun _buf _succ _fail -> failwith "oopsy :/") }
 
 let fix_direct f =
   let rec p = ref notset
-  and r = { run = fun input pos fail succ ->
-    (!p).run input pos fail succ }
-  in
+  and r = { run = (fun input succ fail -> !p.run input succ fail) } in
   p := f r;
   r
 
@@ -207,15 +261,7 @@ let fix =
   | Bytecode -> fix_direct
   | Other _ -> fun f -> fix_lazy ~max_steps:20 f
 
-let sep_by1 s p =
-  fix (fun m -> lift2 cons p ((s *> m) <|> return []))
-
-let sep_by s p =
-  (lift2 cons p ((s *> sep_by1 s p) <|> return [])) <|> return []
-
-let pos = 
-  { run = fun input pos succ _fail -> succ input pos pos }
-
-let many p =
-  fix (fun m ->
-    (lift2 cons p m) <|> return [])
+let sep_by1 s p = fix (fun m -> lift2 cons p (s *> m <|> return []))
+let sep_by s p = lift2 cons p (s *> sep_by1 s p <|> return []) <|> return []
+let pos = { run = (fun input succ _fail -> succ input (Input.pos input)) }
+let many p = fix (fun m -> lift2 cons p m <|> return [])
