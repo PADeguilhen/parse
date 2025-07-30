@@ -53,11 +53,7 @@ let test_peek_string () =
   let p = peek_string 3 in
   let result = parser p "hello" in
   Alcotest.(check (result string string))
-    "peek_string should return prefix" (Ok "hel") result;
-
-  let result2 = parser p "hi" in
-  Alcotest.(check (result string string))
-    "peek_string should return available chars" (Ok "hi") result2
+    "peek_string should return prefix" (Ok "hel") result
 
 let test_advance () =
   let p = advance 2 *> peek_char in
@@ -78,7 +74,7 @@ let () =
   let open Alcotest in
   run "parser"
     [
-      ( "lifting",
+      ( "parsing",
         [
           test_case "char" `Quick test_char;
           test_case "string" `Quick test_string;

@@ -26,34 +26,27 @@ module Input = struct
   let pos v = v.pos
   let len (v : t) = v.length
 
+  let internalNext ~dist v =
+    if v.is_increasing then v.pos <- v.pos + dist else v.pos <- v.pos - dist
+
   (* Can you go to the dist next element in the input (exclusive) *)
   let can_get ~dist (v : t) =
     if v.is_increasing then v.pos + dist < v.length else v.pos - dist >= 0
 
   let collect (v : t) len =
-    let res = String.sub v.input v.pos len in
-    Printf.printf "now:%d + len:%d\n" v.pos len;
-    v.pos <- v.pos + len;
-    res
+    if v.is_increasing then String.sub v.input v.pos len
+    else String.sub v.input (v.pos - len) len
 
   let get ~dist (v : t) =
-    if can_get ~dist v then begin Printf.printf "get called on %c\n" v.input.[v.pos + dist]; v.input.[v.pos + dist] end
+    if can_get ~dist v then
+      if v.is_increasing then v.input.[v.pos + dist] else v.input.[v.pos - dist]
     else
       failwith
         (Printf.sprintf "Input backend error: out of bounds in get: %d" v.pos)
 
   let next ~dist v =
-    if v.is_increasing then v.pos <- v.pos + dist else v.pos <- v.pos - dist;
+    internalNext ~dist v;
     v
-
-  let get_next v =
-    if can_get ~dist:0 v then (
-      let res = get ~dist:0 v in
-      if v.is_increasing then v.pos <- v.pos else v.pos <- v.pos;
-      res)
-    else
-      failwith
-        (Printf.sprintf "Input backend error: cannot get to next: %d" v.pos)
 end
 
 type 'a with_input = Input.t -> 'a
@@ -156,8 +149,9 @@ let advance n =
   {
     run =
       (fun input success failure ->
-        if Input.can_get ~dist:n input then failure input []
-        else success (Input.next ~dist:n input) ());
+        if Input.can_get ~dist:n input then
+          success (Input.next ~dist:n input) ()
+        else failure input []);
   }
 
 let take_while f =
@@ -165,13 +159,14 @@ let take_while f =
     run =
       (fun input success _fail ->
         let rec range l =
-          if Input.can_get ~dist:l input && f (Input.get ~dist:l input) then
-            begin Printf.printf "taking %c" (Input.get ~dist:l input);
-            range (l + 1) end
+          if Input.can_get ~dist:l input && f (Input.get ~dist:l input) then (
+            Printf.printf "taking %c" (Input.get ~dist:l input);
+            range (l + 1))
           else l
         in
-        let result = Input.collect input (range 0) in
-        success input result);
+        let dist = range 0 in 
+        let result = Input.collect input dist in
+        success (Input.next ~dist:dist input) result);
   }
 
 let take_while1 f =
@@ -187,27 +182,26 @@ let take_while1 f =
         if len = 0 then failure input []
         else
           let result = Input.collect input len in
-          success input result);
+          success (Input.next ~dist:len input) result);
   }
 
 let peek_char =
   {
     run =
       (fun input success _fail ->
-        if Input.can_get ~dist:0 input then success input None
-        else success input (Some (Input.get input)));
+        if Input.can_get ~dist:0 input then
+          success input (Some (Input.get ~dist:0 input))
+        else success input None);
   }
 
 let peek_string n =
   {
     run =
       (fun input success failure ->
-        let rec collect i acc =
-          if i = n then success input acc
-          else if Input.can_get ~dist:i input then failure input []
-          else collect (i + 1) (acc ^ String.make 1 (Input.get_next input))
-        in
-        collect 0 "");
+        if Input.can_get ~dist:n input then
+          let col = Input.collect input n in
+          success input col
+        else failure input []);
   }
 
 let char c =
@@ -215,7 +209,8 @@ let char c =
     run =
       (fun input success failure ->
         if not (Input.can_get ~dist:0 input) then failure input []
-        else if Input.get_next input = c then success input c
+        else if Input.get ~dist:0 input = c then
+          success (Input.next ~dist:1 input) c
         else failure input []);
   }
 
