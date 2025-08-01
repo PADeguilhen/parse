@@ -35,7 +35,7 @@ module Input = struct
 
   let collect (v : t) len =
     if v.is_increasing then String.sub v.input v.pos len
-    else String.sub v.input (v.pos - len) len
+    else String.sub v.input (v.pos - len + 1) len
 
   let get ~dist (v : t) =
     if can_get ~dist v then
@@ -160,7 +160,6 @@ let take_while f =
       (fun input success _fail ->
         let rec range l =
           if Input.can_get ~dist:l input && f (Input.get ~dist:l input) then (
-            Printf.printf "taking %c" (Input.get ~dist:l input);
             range (l + 1))
           else l
         in
